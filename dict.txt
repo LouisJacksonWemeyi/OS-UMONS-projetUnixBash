@@ -1,0 +1,8 @@
+daesh
+kamikaze
+bombe
+attaque
+ceinture.*explosi.*
+mitraillette
+kalachnikov
+detonateur

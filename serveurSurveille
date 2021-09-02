@@ -1,0 +1,144 @@
+#!/bin/bash
+
+# ===============================================================================================
+# Cette fonction recoit en entré une liste de processus et renvoi en sortie les processus supects
+ 
+function displaySuspectProcess(){
+while read lineps
+do 
+    while read word
+    do
+      if echo "$lineps" | grep "$word" > /dev/null; then
+        echo "$lineps" 
+      fi
+    done<dict.txt
+done | uniq | while read line
+do 
+        ((event=event + 1))
+        noEvent="false"
+        stateps=$(echo "$line" | tr -s '  ' ' ' | cut -f10 -d' ' | cut -c1) # récupération de l'etat du processus dans la variable state
+        pid=$(echo "$line" | tr -s '  ' ' ' | cut -f3 -d' ') # récupération de l'id du processus dans la variable pid
+        uid=$(echo "$line" | tr -s '  ' ' ' | cut -f2 -d' ') # récupération de l'id de l'utilisateur dans la variable uid
+        command=$(echo "$line" | tr -s '  ' ' ' | cut -f14- -d' ') # récupération de la commande du processus dans la variable commande
+        username=$(grep -i "$uid" "/etc/passwd" | cut -d: -f1) # récupération du login dans la variable username
+        
+        if [ "$stateps" = "R" ]; then 
+            etatps="activable"
+          elif [ "$stateps" = "S" ]; then
+            etatps="en attente d'un évènement"
+          elif [ "$stateps" = "T" ]; then
+            etatps="en attente d'une réactivation"
+          elif [ "$stateps" = "D" ]; then 
+            etatps="attente non interruptible"
+          else
+            etatps="zombie"
+        fi
+        echo "Processus suspects" >> "journal.txt" 
+        echo "EVENT $event" >> "journal.txt"
+        echo "proc $pid, user $username ($(grep -i "$username" "/etc/passwd" | cut -d: -f5)), group $(grep -i "$username" "/etc/group" | cut -d: -f1), 
+        command : $command, state : $etatps" >> "journal.txt"
+done
+}
+
+# ===============================================================================================
+# Cette fonction recoit en entré une liste de fichiers et renvoi en sortie les fichiers supects
+ 
+function displaySuspectOpenFiles(){
+grep -Ei '[[:digit:]]*[rw][[:space:]]*REG' | grep -v "journal.txt" | while read ligne 
+do 
+      #sauve la ligne dans un tableau
+      tabLigne=($ligne)
+   
+      #on récupère le nom du fichier, le numéros du processus qui a ouvert le fichier et l'utilisateur
+      name="${tabLigne[8]}"; baseName="$(basename $name)"; pid="${tabLigne[1]}"; user="${tabLigne[2]}"
+      #echo "${tabLigne[*]}"; echo "$name"; echo "$baseName"; echo "$user"; echo "$pid"
+      #variable contenant le(s) motif(s) rencontré(s) dans le dictionnaire
+      motifs=""; motifBaseName=""
+
+      while read word 
+      do 
+        # boucle pour extraire les mots suspects dans le fichier ouvert
+        if grep -i "$word" "$name" > /dev/null; then
+          motifs+=" $word"
+        fi
+    
+        # boucle pour extraire le mot suspect dans le fichier ouvert 
+        if echo "$baseName" | grep -i "$word" > /dev/null; then 
+          motifBaseName="$word"
+        fi
+      done<dict.txt
+ 
+      if [[ "$motifs" != "" || "$motifBaseName" != "" || ! -r "$name" ]]; then
+      
+         noEvent="false"
+         (( event=event + 1))
+         statepf="$(ps f -p "$pid" | grep -i "$pid" | tr -s '  ' ' ' | cut -f3 -d' ' | cut -c1)" #récupération de l'etat du processus dans la varible state
+           
+         if [ "$statepf" = "R" ]; then 
+            etatpf="activable"
+         elif [ "$statepf" = "S" ]; then
+            etatpf="en attente d'un évènement"
+         elif [ "$statepf" = "T" ]; then
+            etatpf="en attente d'une réactivation"
+         elif [ "$statepf" = "D" ]; then 
+            etatpf="attente non interruptible"
+         else
+            etatpf="zombie"
+         fi
+         echo "Fichiers suspects" >> "journal.txt"
+         echo "EVENT $event" >> "journal.txt"
+        
+         echo "proc $pid, user $user ($(grep -i "$user" "/etc/passwd" | cut -d: -f5)), group $(grep -i "$user" "/etc/group" | cut -d: -f1), commande : $(ps f -p "$pid" | grep -i "$pid" | tr -s '  '         ' ' | cut -f6- -d' '), state : $etatpf" >> "journal.txt"      
+        
+         if [[ ! -r "$name" && "$motifBaseName" != "" ]]; then
+              echo "Fichier ouvert : $name, fichier non accessible en lecture avec un nom de fichier suspect, motifs rencontrés : $motifBaseName" >> "journal.txt"
+         elif [[ ! -r "$name" && "$motifBaseName" = "" ]]; then
+              echo "Fichier ouvert : $name, fichier non accessible en lecture" >> "journal.txt"
+         elif [[ "$motifs" != "" && "$motiBaseName" != "" ]]; then
+              echo "Fichier ouvert : $name, nom du fichier suspect, motifs rencontrés : $motif $motifBaseName" >> "journal.txt"
+         elif [[ $motifs != "" && "$motifBaseName" = "" ]]; then
+              echo "Fichier ouvert : $name, motifs rencontrés : $motifs" >> "journal.txt"
+         else
+              echo "Fichier ouvert : $name, nom du fichier suspect, motifs rencontrés : $motifBaseName" >> "journal.txt"
+         fi
+      
+         synonymes=$(find "$(df -P "$name" | head -2 | tail -1 | tr -s '  ' ' ' | cut -f6 -d' ')" -inum "$(ls -i "$name" | cut -f1 -d' ')" 2> /dev/null | grep -v "$name")
+
+         if [ "$synonymes" != "" ]; then
+              echo "Synonymes : $synonyme" >> "journal.txt"
+         else  
+              echo "Ce fichier ne contient pas d'autre synonymes" >> "journal.txt"
+         fi 
+      fi
+done
+}
+
+# =================================================================
+
+function surveilleProcessAndFiles(){
+if [ "$2" = "pid" ]; then
+    ps l p "$1" | displaySuspectProcess
+    lsof -p "$1" | displaySuspectOpenFiles
+elif [ "$2" = "uid" ]; then
+    ps l U "$1" | displaySuspectProcess
+    lsof -u "$1" | displaySuspectOpenFiles
+else
+    ps l | displaySuspectProcess
+    lsof | displaySuspectOpenFiles 
+fi
+}
+
+# =================================================================
+# Main program serveur
+
+while true 
+do
+   echo >> "journal.txt"
+   echo "$(date)" >> "journal.txt"
+     noEvent=$(surveilleProcessAndFiles "$1" "$2"|grep "false"|uniq)
+#     echo "noEvent: $noEvent"
+   if [ "$noEvent" = "" ]; then
+       echo "NO EVENT" >> "journal.txt"
+   fi
+sleep "$3"
+done

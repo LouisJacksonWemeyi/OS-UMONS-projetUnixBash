@@ -1,0 +1,108 @@
+#!/bin/bash
+
+# ======================================================================================
+# fonction qui lance le script surveilleServeur en fonction de la syntaxe d'utillisation
+
+function startServeur(){
+case "$4" in
+           1)
+             # echo "$1 $2 $3 rien"
+             ./serveurSurveille "$1" "$2" "$3" &
+             ;;
+           3)
+             if [ "$1" != "" ]; then
+             # echo "$1 $2 $3 pid"
+              ./serveurSurveille "$1" "pid" "$3" &
+             elif [ "$2" != "" ]; then
+             # echo "$1 $2 $3 uid"
+              ./serveurSurveille "$2" "uid" "$3" & 
+             elif [ "$3" != "" ]; then
+             # echo "$1 $2 $3"
+               ./serveurSurveille "$1" "$2" "$3" &
+             else
+               break
+             fi
+             ;;
+           5)
+             if [[ "$1" != "" && "$2" = "" ]]; then
+              ./serveurSurveille "$1" "pid" "$3" &
+             elif [[ "$2" != "" && "$1" = "" ]]; then
+              ./serveurSurveille "$2" "uid" "$3" &
+             else
+               echo "Usage: start [-p pid] [-u user] [-d x] invalid command arguments please consult the user manual or contact your administrator" 1>&2
+               exit 1
+             fi
+             ;;
+           *)
+             echo "Usage: start [-p pid] [-u user] [-d x] invalid command arguments please consult the user manual or contact your administrator" 1>&2 
+             exit 1 
+             ;;
+        esac
+}
+
+# =======================================================================================
+# Main program 
+ 
+if [ ! -f "journal.txt" ]; then
+touch "journal.txt"
+fi
+
+if [ ! -f "restart.txt" ]; then
+ touch "restart.txt"
+fi
+
+nbrArg="$#"
+
+case $1 in 
+"start")
+        # traitement et récuperation des options de la syntaxe d'exécution en dans les variable sleeep, processId et user
+        sleeep=10
+        processId=
+        user=
+        while [[ "$2" = -*  ]]
+        do
+          case $2 in
+               -p) processId=$3
+                   shift ;;
+               -u) user=$3
+                   shift ;;
+               -d) sleeep=$3
+                   shift ;;
+               --) break ;; #stop processing option
+                *) echo "$0: Invalid option $2 ignored.">&2 ;;
+          esac
+          shift
+        done
+
+        # echo "$processId $user $sleeep $nbrArg"
+        # sauvegarde de ces options dans le fichier restart.txt pour le relancement du serveur  
+        for param in "$processId" "$user" "$sleeep" "$nbrArg" 
+        do 
+          echo "$param" >> "restart.txt"
+        done
+
+        startServeur "$processId" "$user" "$sleeep" "$nbrArg" && echo "Serveur lancé" 
+        ;;      
+"stop") 
+       killall -TERM serveurSurveille && rm "journal.txt" "restart.txt" && echo "serveur arrêté"
+       ;;
+"restart")
+       killall -TERM serveurSurveille 
+       n=1
+       while read arg
+       do
+          eval "s${n}"="$arg"
+          ((n+=1))
+       done < "restart.txt"  
+       #echo "$s1 $s2 $s3 $s4"
+       startServeur "$s1" "$s2" "$s3" "$s4" 
+       if [ $? -eq 1 ]; then 
+         echo "serveur non relancé" 
+       else 
+         echo "serveur relancé"
+       fi 
+       ;;
+     *)
+       echo "Usage: start [-p pid] [-u user] [-d x] invalid command arguments please consult the user manual or contact your administrator" 1>&2
+       ;;
+esac

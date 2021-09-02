@@ -1,0 +1,11 @@
+#!/bin/bash
+n=1
+while read -u3 line
+do 
+  echo "$line"
+  ((n+=1))
+done
+
+if [ $n -eq 1 ]; then
+     echo "NO EVENT"
+fi
